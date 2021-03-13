@@ -29,30 +29,42 @@ class Strategy(base.Strategy):
         return PruningHparams
 
     @staticmethod
-    def prune(pruning_hparams: PruningHparams, trained_model: models.base.Model, current_mask: Mask = None):
-        current_mask = Mask.ones_like(trained_model).numpy() if current_mask is None else current_mask.numpy()
+    def prune(pruning_hparams: PruningHparams,
+              trained_model: models.base.Model,
+              current_mask: Mask = None):
+        current_mask = Mask.ones_like(trained_model).numpy(
+        ) if current_mask is None else current_mask.numpy()
 
         # Determine the number of weights that need to be pruned.
-        number_of_remaining_weights = np.sum([np.sum(v) for v in current_mask.values()])
+        number_of_remaining_weights = np.sum(
+            [np.sum(v) for v in current_mask.values()])
         number_of_weights_to_prune = np.ceil(
-            pruning_hparams.pruning_fraction * number_of_remaining_weights).astype(int)
+            pruning_hparams.pruning_fraction *
+            number_of_remaining_weights).astype(int)
 
         # Determine which layers can be pruned.
         prunable_tensors = set(trained_model.prunable_layer_names)
         if pruning_hparams.pruning_layers_to_ignore:
-            prunable_tensors -= set(pruning_hparams.pruning_layers_to_ignore.split(','))
+            prunable_tensors -= set(
+                pruning_hparams.pruning_layers_to_ignore.split(','))
 
         # Get the model weights.
-        weights = {k: v.clone().cpu().detach().numpy()
-                   for k, v in trained_model.state_dict().items()
-                   if k in prunable_tensors}
+        weights = {
+            k: v.clone().cpu().detach().numpy()
+            for k, v in trained_model.state_dict().items()
+            if k in prunable_tensors
+        }
 
         # Create a vector of all the unpruned weights in the model.
-        weight_vector = np.concatenate([v[current_mask[k] == 1] for k, v in weights.items()])
+        weight_vector = np.concatenate(
+            [v[current_mask[k] == 1] for k, v in weights.items()])
         threshold = np.sort(np.abs(weight_vector))[number_of_weights_to_prune]
 
-        new_mask = Mask({k: np.where(np.abs(v) > threshold, current_mask[k], np.zeros_like(v))
-                         for k, v in weights.items()})
+        new_mask = Mask({
+            k:
+            np.where(np.abs(v) > threshold, current_mask[k], np.zeros_like(v))
+            for k, v in weights.items()
+        })
         for k in current_mask:
             if k not in new_mask:
                 new_mask[k] = current_mask[k]
