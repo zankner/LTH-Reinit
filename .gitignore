@@ -1,6 +1,6 @@
 
-# Created by https://www.toptal.com/developers/gitignore/api/linux,macos,python,visualstudiocode,vim
-# Edit at https://www.toptal.com/developers/gitignore?templates=linux,macos,python,visualstudiocode,vim
+# Created by https://www.toptal.com/developers/gitignore/api/python,macos,linux,visualstudiocode,vim
+# Edit at https://www.toptal.com/developers/gitignore?templates=python,macos,linux,visualstudiocode,vim
 
 ### Linux ###
 *~
@@ -224,4 +224,4 @@ tags
 .history
 .ionide
 
-# End of https://www.toptal.com/developers/gitignore/api/linux,macos,python,visualstudiocode,vim
+# End of https://www.toptal.com/developers/gitignore/api/python,macos,linux,visualstudiocode,vim
