@@ -16,6 +16,7 @@ from pruning.mask import Mask
 from pruning.pruned_model import PrunedModel
 from training import train
 from reinit.plot_weights import plot_weigtht_dist
+from reinit.modify_weights import resample_weights
 
 
 @dataclass
@@ -25,6 +26,7 @@ class LotteryRunner(Runner):
     desc: LotteryDesc
     verbose: bool = True
     evaluate_every_epoch: bool = True
+    reinit: bool = False
 
     @staticmethod
     def description():
@@ -43,6 +45,14 @@ class LotteryRunner(Runner):
                             help=help_text)
 
     @staticmethod
+    def _reinit_argument(parser):
+        help_text = 'Whether the pruned weights should be reinitialized from winning ticket'
+        parser.add_argument("--reinit",
+                            default=True,
+                            type=lambda x: (str(x).lower() != 'false'),
+                            help=help_text)
+
+    @staticmethod
     def add_args(parser: argparse.ArgumentParser) -> None:
         # Get preliminary information.
         defaults = shared_args.maybe_get_default_hparams()
@@ -53,13 +63,15 @@ class LotteryRunner(Runner):
             'Lottery Ticket Hyperparameters',
             'Hyperparameters that control the lottery ticket process.')
         LotteryRunner._add_levels_argument(lottery_parser)
+        LotteryRunner._reinit_argument(lottery_parser)
         LotteryDesc.add_args(parser, defaults)
 
     @staticmethod
     def create_from_args(args: argparse.Namespace) -> 'LotteryRunner':
         return LotteryRunner(args.replicate, args.levels,
                              LotteryDesc.create_from_args(args),
-                             not args.quiet, not args.evaluate_only_at_end)
+                             not args.quiet, not args.evaluate_only_at_end,
+                             args.reinit)
 
     def display_output_location(self):
         print(self.desc.run_path(self.replicate, 0))
@@ -74,16 +86,30 @@ class LotteryRunner(Runner):
             print(f'Output Location: {self.desc.run_path(self.replicate, 0)}' +
                   '\n' + '=' * 82 + '\n')
 
-        if get_platform().is_primary_process:
-            self.desc.save(self.desc.run_path(self.replicate, 0))
-        if self.desc.pretrain_training_hparams: self._pretrain()
-        if get_platform().is_primary_process: self._establish_initial_weights()
-        get_platform().barrier()
+        if self.reinit:
+            pruned_location = self.desc.run_path(self.replicate, self.levels)
+            location = self.desc.reinit_path(self.replicate)
 
-        for level in range(self.levels + 1):
-            if get_platform().is_primary_process: self._prune_level(level)
+            model = models.registry.load(pruned_location,
+                                         self.desc.train_start_step,
+                                         self.desc.model_hparams,
+                                         self.desc.train_outputs)
+            mask = Mask.load(pruned_location)
+
+            model = resample_weights(self.desc.pruning_hparams, model, mask)
+
+        else:
+            if get_platform().is_primary_process:
+                self.desc.save(self.desc.run_path(self.replicate, 0))
+            if self.desc.pretrain_training_hparams: self._pretrain()
+            if get_platform().is_primary_process:
+                self._establish_initial_weights()
             get_platform().barrier()
-            self._train_level(level)
+
+            for level in range(self.levels + 1):
+                if get_platform().is_primary_process: self._prune_level(level)
+                get_platform().barrier()
+                self._train_level(level)
 
     # Helper methods for running the lottery.
     def _pretrain(self):
@@ -167,4 +193,9 @@ class LotteryRunner(Runner):
 
             new_location = self.desc.run_path(self.replicate, level)
             new_mask = Mask.load(new_location)
-            plot_weigtht_dist(new_mask, model, level)
+            og_location = self.desc.run_path(self.replicate, 0)
+            og_model = models.registry.load(og_location,
+                                            self.desc.train_start_step,
+                                            self.desc.model_hparams,
+                                            self.desc.train_outputs)
+            plot_weigtht_dist(new_mask, og_model, level)
