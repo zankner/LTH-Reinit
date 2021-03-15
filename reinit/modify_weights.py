@@ -16,10 +16,12 @@ def resample_weights(pruning_hparams, model, mask):
         k: v.clone().cpu().detach().numpy()[mask[k] == 1]
         for k, v in model.state_dict().items() if k in prunable_tensors
     }
-    print(model['conv.weight'])
+
     with torch.no_grad():
         for k, v in weights.items():
-            model[k][mask[k] == 0] = np.random.choice(
-                v, len(model[k][mask[k] == 0]))
+            random_winning_params = np.random.choice(
+                v, len(model.state_dict()[k][mask[k] == 0]))
+            model.state_dict()[k][mask[k] == 0] = torch.Tensor(
+                random_winning_params)
 
     return model

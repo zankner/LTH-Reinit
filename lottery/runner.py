@@ -48,8 +48,8 @@ class LotteryRunner(Runner):
     def _reinit_argument(parser):
         help_text = 'Whether the pruned weights should be reinitialized from winning ticket'
         parser.add_argument("--reinit",
-                            default=True,
-                            type=lambda x: (str(x).lower() != 'false'),
+                            default=False,
+                            type=lambda x: (str(x).lower() == 'true'),
                             help=help_text)
 
     @staticmethod
@@ -88,7 +88,6 @@ class LotteryRunner(Runner):
 
         if self.reinit:
             pruned_location = self.desc.run_path(self.replicate, self.levels)
-            location = self.desc.reinit_path(self.replicate)
 
             model = models.registry.load(pruned_location,
                                          self.desc.train_start_step,
@@ -97,6 +96,10 @@ class LotteryRunner(Runner):
             mask = Mask.load(pruned_location)
 
             model = resample_weights(self.desc.pruning_hparams, model, mask)
+
+            get_platform().barrier()
+
+            self._train_reinit(model, self.levels)
 
         else:
             if get_platform().is_primary_process:
@@ -199,3 +202,21 @@ class LotteryRunner(Runner):
                                             self.desc.model_hparams,
                                             self.desc.train_outputs)
             plot_weigtht_dist(new_mask, og_model, level)
+
+    def _train_reinit(self, model, level):
+        location = self.desc.reinit_path(self.replicate)
+        if models.registry.exists(location, self.desc.train_end_step): return
+
+        mask_location = self.desc.run_path(self.replicate, level)
+
+        pruned_model = PrunedModel(model, Mask.load(mask_location))
+        pruned_model.save(location, self.desc.train_start_step)
+        if self.verbose and get_platform().is_primary_process:
+            print('-' * 82 + '\nReinitializing\n' + '-' * 82)
+        train.standard_train(pruned_model,
+                             location,
+                             self.desc.dataset_hparams,
+                             self.desc.training_hparams,
+                             start_step=self.desc.train_start_step,
+                             verbose=self.verbose,
+                             evaluate_every_epoch=self.evaluate_every_epoch)
